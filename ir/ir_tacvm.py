@@ -1,4 +1,4 @@
-from ir_tac import *
+from ir.ir_tac import *
 
 class TACVM:
     def __init__(self, tac: TAC) -> None:

@@ -1,9 +1,9 @@
-from lex import Lexer
-from parse import Parser, LiteralNode
-from semantics import Checker
-from ir_tac import TAC
-from ir_tacvm import TACVM
-from x86_cgen import X86VirtCodeGen
+from c_ast.lex import Lexer
+from c_ast.parse import Parser, LiteralNode
+from c_ast.semantics import Checker
+from ir.ir_tac import TAC
+from ir.ir_tacvm import TACVM
+from cgen.x86_cgen import X86VirtCodeGen
 
 lex_testcase_1 = """
 float my_function(int arg0, int arg1) {

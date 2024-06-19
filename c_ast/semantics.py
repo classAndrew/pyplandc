@@ -1,5 +1,5 @@
-from pland_ast import *
-from parse import integral_types, float_types, basic_types
+from c_ast.pland_ast import *
+from c_ast.parse import integral_types, float_types, basic_types
 from typing import Dict
 
 type_hierarchy = {

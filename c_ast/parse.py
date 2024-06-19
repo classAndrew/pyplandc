@@ -1,6 +1,6 @@
 # parser
-from pland_ast import *
-from lex import LexicalToken
+from c_ast.pland_ast import *
+from c_ast.lex import LexicalToken
 
 valid_expr_start = ["literal_decimal", "literal_integer", "identifier", "left_paren",
                     "minus", "ampersand", "star"]
