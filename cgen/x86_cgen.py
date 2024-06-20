@@ -291,9 +291,12 @@ class X86VirtCodeGen:
         return result_reg
 
     def x86_unary(self, node: OpUnaryNode) -> VirtualRegister | int:
-        result_reg = self.get_next_temp_register()
-
+        node_type = node.get_inferred_type()
+        size = size_from_type(node_type)
+        result_reg = self.get_next_temp_register(size)
+        
         if node.op == "neg":
+            self.add_instruction(Move(result_reg, self.x86_expr(node.val)))
             self.add_instruction(Arithmetic("imul", result_reg, -1))
 
         elif node.op == "ref":
