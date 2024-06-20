@@ -8,9 +8,20 @@ floating_types = { "float": 4, "double": 8 }
 def is_unsigned(type_name: str):
     return type_name.startswith("unsigned")
 
+def size_from_type(type_name: str):
+    # if it's not an integral or floating type, it's a pointer (no structs, enums, or unions yet), so it's 8 bytes
+    word_size = 8
+    if type_name in integral_types:
+        word_size = integral_types[type_name]
+    elif type_name in floating_types:
+        word_size = floating_types[type_name]
+
+    return word_size
+
 @dataclass
 class VirtualRegister:
     register_name: str
+    word_size: int = 8
 
     def __str__(self) -> str:
         return self.register_name
@@ -27,7 +38,7 @@ class VirtualRegister:
             "r9": { 1: "r9b", 2: "r9w", 4: "r9d", 8: "r9" },
         }
 
-        return VirtualRegister(reg64_to_reg[self.register_name][size])
+        return VirtualRegister(reg64_to_reg[self.register_name][size], word_size=size)
 
 class Immediate: pass # just so vscode gives me the green color
 Immediate = int | float
@@ -36,6 +47,7 @@ Immediate = int | float
 class MemoryLocation:
     location: Immediate | VirtualRegister = None # address specified by register or immediate
     offset: int = 0 # maybe not used
+    val_type: str = None
 
     # stack assigned vars should only be determined at a later stage
     # stack ordering specifics may depend on target arch 
@@ -57,7 +69,9 @@ class MemoryLocation:
         else:
             bracket_part_str = f"[{self.location}]"
         
-        return f"QWORD PTR {bracket_part_str}"
+        size = size_from_type(self.val_type)
+        ptr_name = { 1: "BYTE", 2: "WORD", 4: "DWORD", 8: "QWORD" }.get(size, "VOID")
+        return f"{ptr_name} PTR {bracket_part_str}"
 
 class Operand: pass
 Operand = Immediate | VirtualRegister | MemoryLocation
@@ -229,7 +243,7 @@ class X86VirtCodeGen:
             return VirtualRegister(f"t{old_id}")
         
         # use ebx probably
-        return self.rbx
+        return self.rbx.as_size(word_size)
 
     def reset_arg_reg_index(self):
         self.arg_reg_idx = 0
@@ -260,15 +274,17 @@ class X86VirtCodeGen:
         if not is_unsigned(node_type):
             op = { "mul": "imul", "div": "idiv" }.get(op, op)
 
+        word_size = size_from_type(node_type)
+
         comparisons = { "l", "e", "le", "g", "ge" }
 
         left, right = self.x86_expr(node.val1), self.x86_expr(node.val2)
         if op in comparisons:
-            result_reg = self.get_next_temp_register()
+            result_reg = self.get_next_temp_register(word_size)
             self.add_instruction(Arithmetic("cmp", left, right))
             self.add_instruction(SetCmp(op, result_reg.as_size(1)))
         else:
-            result_reg = self.get_next_temp_register()
+            result_reg = self.get_next_temp_register(word_size)
             self.add_instruction(Move(result_reg, left))
             self.add_instruction(Arithmetic(op, result_reg, right))
 
@@ -288,7 +304,7 @@ class X86VirtCodeGen:
         elif node.op == "deref":
             expr_reg = self.x86_expr(node.val)
             if isinstance(expr_reg, Immediate | VirtualRegister):
-                self.add_instruction(Move(result_reg, MemoryLocation(location=expr_reg)))
+                self.add_instruction(Move(result_reg, MemoryLocation(location=expr_reg, val_type="long")))
             elif isinstance(expr_reg, MemoryLocation):
                 self.add_instruction(Move(result_reg, expr_reg))
             else:
@@ -417,7 +433,7 @@ class X86VirtCodeGen:
         self.add_instruction(Move(self.rbp, self.rsp))
 
         # rbx is callee saved
-        rbx_loc = MemoryLocation(self.rbp, -8)
+        rbx_loc = MemoryLocation(self.rbp, -8, val_type="long")
         self.add_instruction(Move(rbx_loc, self.rbx)) # sometimes not used, but do it anyways for simplicity
         next_alloc_bp = -8 # from rbx 
         
@@ -426,13 +442,19 @@ class X86VirtCodeGen:
 
         # read in the parameters that are passed in as registers and move to stack
         self.reset_arg_reg_index()
-        for idx, param in enumerate(fun_def.params, start=1):
-            loc = MemoryLocation(location=self.rbp, offset=-idx*8 + next_alloc_bp)
+        cumu_bytes_for_locals = 0
+        cumu_bytes_for_stack_spill = 0
+        for idx, param in enumerate(fun_def.params):
+            node_type = param.param_var.get_inferred_type()
+            cumu_bytes_for_locals += size_from_type(node_type)
+
+            loc = MemoryLocation(location=self.rbp, offset=-cumu_bytes_for_locals + next_alloc_bp, val_type=node_type)
             if self.arg_reg_idx < len(self.arg_registers):
                 self.add_instruction(Move(loc, self.arg_registers[self.arg_reg_idx]))
             else:
                 # +8 to skip old rbp; another +8 skips return address then 
-                stack_arg_loc = MemoryLocation(location=self.rbp, offset=(self.arg_reg_idx - len(self.arg_registers))*8 + 16)
+                stack_arg_loc = MemoryLocation(location=self.rbp, offset=cumu_bytes_for_stack_spill + 16, val_type=node_type)
+                cumu_bytes_for_stack_spill += size_from_type(node_type)
                 # move arg on stack to rbx or rax, then move it to current frame's stack
                 # this emulates pass by value and complies with gnu assembler rule of only having one mem ref per mov
                 self.add_instruction(Move(self.rbx, stack_arg_loc))  
@@ -444,12 +466,15 @@ class X86VirtCodeGen:
         self.reset_arg_reg_index()
 
         # assign all the locals to the stack
-        for idx, local_var in enumerate(fun_def.fun_locals, start=1):
+        for idx, local_var in enumerate(fun_def.fun_locals):
             # skip the params which are already assigned
             if local_var.get_ir_name() in self.var_ir_to_location: 
                 continue
 
-            loc = MemoryLocation(location=self.rbp, offset=-idx*8 + next_alloc_bp)
+            node_type = local_var.get_inferred_type()
+            cumu_bytes_for_locals += size_from_type(node_type)
+
+            loc = MemoryLocation(location=self.rbp, offset=-cumu_bytes_for_locals + next_alloc_bp, val_type=node_type)
             self.assign_variable_to_stack(local_var, loc)
         
         self.x86_stmt_block(fun_def.body)

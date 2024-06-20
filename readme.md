@@ -22,5 +22,12 @@ Compiler Pipeline
     - Emits assembly instructions for target arch
 
 
+There are a few major differences / features missing in this implementation that may be added in the future
+1. No preprocessor macros
+2. Stricter type checking (signed integers are not automatically cast to unsigned or vice versa), though type promotion is implemented.
+3. No for-loop semantics
+4. No string literals
+5. No user-defined types (structs, unions, enums, typedefs)
+
 *= most of the C programming features
 
