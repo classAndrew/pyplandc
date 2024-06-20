@@ -27,6 +27,7 @@ class VirtualRegister:
         return self.register_name
     
     def as_size(self, size=8) -> str:
+        reg_to_reg64 = { }
         reg64_to_reg = {
             "rax": { 1: "al", 2: "ax", 4: "eax", 8: "rax" },
             "rbx": { 1: "bl", 2: "bx", 4: "ebx", 8: "rbx" },
@@ -38,7 +39,13 @@ class VirtualRegister:
             "r9": { 1: "r9b", 2: "r9w", 4: "r9d", 8: "r9" },
         }
 
-        return VirtualRegister(reg64_to_reg[self.register_name][size], word_size=size)
+        for k in reg64_to_reg:
+            for v in reg64_to_reg[k].values():
+                reg_to_reg64[v] = k
+            
+        reg64 = reg_to_reg64[self.register_name]
+
+        return VirtualRegister(reg64_to_reg[reg64][size], word_size=size)
 
 class Immediate: pass # just so vscode gives me the green color
 Immediate = int | float
@@ -329,6 +336,8 @@ class X86VirtCodeGen:
             i -= 1
         self.reset_arg_reg_index()
         
+        # clear eax by sys V ABI before function call
+        self.add_instruction(Move(self.rax.as_size(4), 0))
         self.add_instruction(Call(node.fun_name))
         return self.rax
 
