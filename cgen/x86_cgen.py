@@ -2,6 +2,11 @@ from c_ast.pland_ast import *
 from typing import Dict, List
 
 # move, jump, jump_if, jump_not, call, ret, add, sub, mul, div, or, and, gt, gte, lt, lte, eq
+integral_types = { "char": 1, "short": 2, "int": 4, "long": 8 }
+floating_types = { "float": 4, "double": 8 }
+
+def is_unsigned(type_name: str):
+    return type_name.startswith("unsigned")
 
 @dataclass
 class VirtualRegister:
@@ -251,9 +256,11 @@ class X86VirtCodeGen:
               "less_than": 'l', "less_than_equal": "le", "greater_than": 'g', "greater_than_equal": "ge",
                "bit_and": 'and', "bit_or": 'or' }[node.op]
         
+        node_type = node.get_inferred_type()
+        if not is_unsigned(node_type):
+            op = { "mul": "imul", "div": "idiv" }.get(op, op)
+
         comparisons = { "l", "e", "le", "g", "ge" }
-        if op == "mul":
-            op = "imul"
 
         left, right = self.x86_expr(node.val1), self.x86_expr(node.val2)
         if op in comparisons:
