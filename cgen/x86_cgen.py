@@ -3,10 +3,6 @@ from typing import Dict, List
 
 # move, jump, jump_if, jump_not, call, ret, add, sub, mul, div, or, and, gt, gte, lt, lte, eq
 
-# calling functions in TAC IR will look like
-# call myfunc out_reg, reg_a0, reg_a1, reg_a2
-# this will branch and link if needed (jal is not done on IR side)
-
 @dataclass
 class VirtualRegister:
     register_name: str
