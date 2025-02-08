@@ -229,4 +229,4 @@ class SourceFileNode(ASTNode):
         return '\n\n'.join(map(str, self.fun_defs))
     
     def pretty_ast(self) -> str:
-        return '\n'.join(map(indent_newlines, map(str, self.fun_defs)))
+        return '\n'.join(map(indent_newlines, [x.pretty_ast() for x in self.fun_defs]))
